@@ -609,12 +609,12 @@ public class DefaultLitePullConsumerImpl implements MQConsumerInner {
             if (timeout < 0) {
                 throw new IllegalArgumentException("Timeout must not be negative");
             }
-
+            // 开启自动提交时，更新所有消费队列消费进度，但是不上报 broker
             if (defaultLitePullConsumer.isAutoCommit()) {
                 maybeAutoCommit();
             }
             long endTime = System.currentTimeMillis() + timeout;
-
+            // 阻塞获取一个消费请求
             ConsumeRequest consumeRequest = consumeRequestCache.poll(endTime - System.currentTimeMillis(), TimeUnit.MILLISECONDS);
 
             if (endTime - System.currentTimeMillis() > 0) {
@@ -892,13 +892,13 @@ public class DefaultLitePullConsumerImpl implements MQConsumerInner {
             if (!this.isCancelled()) {
 
                 this.currentThread = Thread.currentThread();
-
+                // 队列暂停消费，延迟1000ms 再次执行
                 if (assignedMessageQueue.isPaused(messageQueue)) {
                     scheduledThreadPoolExecutor.schedule(this, PULL_TIME_DELAY_MILLS_WHEN_PAUSE, TimeUnit.MILLISECONDS);
                     log.debug("Message Queue: {} has been paused!", messageQueue);
                     return;
                 }
-
+                // 队列消费进度队列
                 ProcessQueue processQueue = assignedMessageQueue.getProcessQueue(messageQueue);
 
                 if (null == processQueue || processQueue.isDropped()) {
@@ -907,7 +907,8 @@ public class DefaultLitePullConsumerImpl implements MQConsumerInner {
                 }
 
                 processQueue.setLastPullTimestamp(System.currentTimeMillis());
-
+                // 因为是拉模式，consumeRequestCache表示从 broker 拉取到客户端，但是客户端还未消费的（每个里面包含一批次的消息数）
+                // 还未消费的批次数*每批次的大小超过阈值时，则延迟 50ms
                 if ((long) consumeRequestCache.size() * defaultLitePullConsumer.getPullBatchSize() > defaultLitePullConsumer.getPullThresholdForAll()) {
                     scheduledThreadPoolExecutor.schedule(this, PULL_TIME_DELAY_MILLS_WHEN_CACHE_FLOW_CONTROL, TimeUnit.MILLISECONDS);
                     if ((consumeRequestFlowControlTimes++ % 1000) == 0) {
@@ -917,10 +918,11 @@ public class DefaultLitePullConsumerImpl implements MQConsumerInner {
                     }
                     return;
                 }
-
+                // 消费队列中的消息数量
                 long cachedMessageCount = processQueue.getMsgCount().get();
+                // 消费队列中的消息总大小
                 long cachedMessageSizeInMiB = processQueue.getMsgSize().get() / (1024 * 1024);
-
+                // 消费队列消息数限制，超过则延迟 50ms 执行
                 if (cachedMessageCount > defaultLitePullConsumer.getPullThresholdForQueue()) {
                     scheduledThreadPoolExecutor.schedule(this, PULL_TIME_DELAY_MILLS_WHEN_CACHE_FLOW_CONTROL, TimeUnit.MILLISECONDS);
                     if ((queueFlowControlTimes++ % 1000) == 0) {
@@ -930,7 +932,7 @@ public class DefaultLitePullConsumerImpl implements MQConsumerInner {
                     }
                     return;
                 }
-
+                // 消费队列消息总大小限制，超过则延迟 50ms 执行
                 if (cachedMessageSizeInMiB > defaultLitePullConsumer.getPullThresholdSizeForQueue()) {
                     scheduledThreadPoolExecutor.schedule(this, PULL_TIME_DELAY_MILLS_WHEN_CACHE_FLOW_CONTROL, TimeUnit.MILLISECONDS);
                     if ((queueFlowControlTimes++ % 1000) == 0) {
@@ -940,7 +942,7 @@ public class DefaultLitePullConsumerImpl implements MQConsumerInner {
                     }
                     return;
                 }
-
+                // 消费队列中首尾消息 id 跨度限制，超过则延迟 50ms 执行
                 if (processQueue.getMaxSpan() > defaultLitePullConsumer.getConsumeMaxSpan()) {
                     scheduledThreadPoolExecutor.schedule(this, PULL_TIME_DELAY_MILLS_WHEN_CACHE_FLOW_CONTROL, TimeUnit.MILLISECONDS);
                     if ((queueMaxSpanFlowControlTimes++ % 1000) == 0) {
@@ -981,9 +983,11 @@ public class DefaultLitePullConsumerImpl implements MQConsumerInner {
                     }
                     switch (pullResult.getPullStatus()) {
                         case FOUND:
+                            // 队列锁
                             final Object objLock = messageQueueLock.fetchLockObject(messageQueue);
                             synchronized (objLock) {
                                 if (pullResult.getMsgFoundList() != null && !pullResult.getMsgFoundList().isEmpty() && assignedMessageQueue.getSeekOffset(messageQueue) == -1) {
+                                    // 将拉取到的消费放入消费队列中
                                     processQueue.putMessage(pullResult.getMsgFoundList());
                                     submitConsumeRequest(new ConsumeRequest(pullResult.getMsgFoundList(), messageQueue, processQueue));
                                 }
@@ -1006,7 +1010,7 @@ public class DefaultLitePullConsumerImpl implements MQConsumerInner {
                     }
                     log.error("An error occurred in pull message process.", e);
                 }
-
+                // 继续拉取消息
                 if (!this.isCancelled()) {
                     scheduledThreadPoolExecutor.schedule(this, pullDelayTimeMills, TimeUnit.MILLISECONDS);
                 } else {

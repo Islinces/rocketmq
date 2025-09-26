@@ -311,6 +311,7 @@ public class MQClientInstance {
                         this.mQClientAPIImpl.fetchNameServerAddr();
                     }
                     // Start request-response channel
+                    // 启动 Netty 客户端，封装了与 broker 交互请求&响应回调逻辑
                     this.mQClientAPIImpl.start();
                     // Start various schedule tasks
                     this.startScheduledTask();
@@ -332,6 +333,7 @@ public class MQClientInstance {
     }
 
     private void startScheduledTask() {
+        // 自动拉取 nameserver
         if (null == this.clientConfig.getNamesrvAddr()) {
             this.scheduledExecutorService.scheduleAtFixedRate(() -> {
                 try {
@@ -341,7 +343,7 @@ public class MQClientInstance {
                 }
             }, 1000 * 10, 1000 * 60 * 2, TimeUnit.MILLISECONDS);
         }
-
+        // 更新 topic 下队列信息，比如队列数量、队列中消费进度等
         this.scheduledExecutorService.scheduleAtFixedRate(() -> {
             try {
                 MQClientInstance.this.updateTopicRouteInfoFromNameServer();
@@ -349,7 +351,8 @@ public class MQClientInstance {
                 log.error("ScheduledTask updateTopicRouteInfoFromNameServer exception", t);
             }
         }, 10, this.clientConfig.getPollNameServerInterval(), TimeUnit.MILLISECONDS);
-
+        // 清理下线 broker 关联的数据
+        // 心跳
         this.scheduledExecutorService.scheduleAtFixedRate(() -> {
             try {
                 MQClientInstance.this.cleanOfflineBroker();
@@ -358,7 +361,7 @@ public class MQClientInstance {
                 log.error("ScheduledTask sendHeartbeatToAllBroker exception", t);
             }
         }, 1000, this.clientConfig.getHeartbeatBrokerInterval(), TimeUnit.MILLISECONDS);
-
+        // 定期持久化消费进度
         this.scheduledExecutorService.scheduleAtFixedRate(() -> {
             try {
                 MQClientInstance.this.persistAllConsumerOffset();
@@ -366,7 +369,7 @@ public class MQClientInstance {
                 log.error("ScheduledTask persistAllConsumerOffset exception", t);
             }
         }, 1000 * 10, this.clientConfig.getPersistConsumerOffsetInterval(), TimeUnit.MILLISECONDS);
-
+        // 调整线程池参数
         this.scheduledExecutorService.scheduleAtFixedRate(() -> {
             try {
                 MQClientInstance.this.adjustThreadPool();

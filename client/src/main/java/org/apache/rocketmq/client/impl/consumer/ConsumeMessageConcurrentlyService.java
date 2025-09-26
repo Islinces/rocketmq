@@ -83,6 +83,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
     }
 
     public void start() {
+        // 异步清理超过指定时间未消费的消息，并重新投递到 broker再此消费
         this.cleanExpireMsgExecutors.scheduleAtFixedRate(new Runnable() {
 
             @Override

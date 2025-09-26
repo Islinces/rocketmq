@@ -87,6 +87,7 @@ public class ConsumeMessageOrderlyService implements ConsumeMessageService {
 
     @Override
     public void start() {
+        // 集群模式需要请求 broker 锁定队列，避免将同一个队列分配给多个消费者
         if (MessageModel.CLUSTERING.equals(ConsumeMessageOrderlyService.this.defaultMQPushConsumerImpl.messageModel())) {
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override
@@ -430,9 +431,11 @@ public class ConsumeMessageOrderlyService implements ConsumeMessageService {
                 log.warn("run, the message queue not be able to consume, because it's dropped. {}", this.messageQueue);
                 return;
             }
-
+            // 获取消息队列锁对象
             final Object objLock = messageQueueLock.fetchLockObject(this.messageQueue);
             synchronized (objLock) {
+                // 广播模式
+                // 集群模式&&消费队列被锁&&消费队列锁时间未超过阈值
                 if (MessageModel.BROADCASTING.equals(ConsumeMessageOrderlyService.this.defaultMQPushConsumerImpl.messageModel())
                     || this.processQueue.isLocked() && !this.processQueue.isLockExpired()) {
                     final long beginTime = System.currentTimeMillis();
@@ -457,15 +460,17 @@ public class ConsumeMessageOrderlyService implements ConsumeMessageService {
                         }
 
                         long interval = System.currentTimeMillis() - beginTime;
+                        // 避免一个消费队列长时间占用线程
                         if (interval > MAX_TIME_CONSUME_CONTINUOUSLY) {
                             ConsumeMessageOrderlyService.this.submitConsumeRequestLater(processQueue, messageQueue, 10);
                             break;
                         }
-
+                        // 一次最多消费的消息数
                         final int consumeBatchSize =
                             ConsumeMessageOrderlyService.this.defaultMQPushConsumer.getConsumeMessageBatchMaxSize();
-
+                        // 从消费队列中拉取指定消息数
                         List<MessageExt> msgs = this.processQueue.takeMessages(consumeBatchSize);
+                        // 判断是否有从重试队列推送过来的消息，纠正消息 topic
                         defaultMQPushConsumerImpl.resetRetryAndNamespace(msgs, defaultMQPushConsumer.getConsumerGroup());
                         if (!msgs.isEmpty()) {
                             final ConsumeOrderlyContext context = new ConsumeOrderlyContext(this.messageQueue);
@@ -473,6 +478,7 @@ public class ConsumeMessageOrderlyService implements ConsumeMessageService {
                             ConsumeOrderlyStatus status = null;
 
                             ConsumeMessageContext consumeMessageContext = null;
+                            // 执行消费前钩子函数
                             if (ConsumeMessageOrderlyService.this.defaultMQPushConsumerImpl.hasHook()) {
                                 consumeMessageContext = new ConsumeMessageContext();
                                 consumeMessageContext
@@ -490,13 +496,14 @@ public class ConsumeMessageOrderlyService implements ConsumeMessageService {
                             ConsumeReturnType returnType = ConsumeReturnType.SUCCESS;
                             boolean hasException = false;
                             try {
+                                // 获取消费队列消费锁，避免多个线程消费同一个消费队列
                                 this.processQueue.getConsumeLock().readLock().lock();
                                 if (this.processQueue.isDropped()) {
                                     log.warn("consumeMessage, the message queue not be able to consume, because it's dropped. {}",
                                         this.messageQueue);
                                     break;
                                 }
-
+                                // 执行 Consumer 逻辑
                                 status = messageListener.consumeMessage(Collections.unmodifiableList(msgs), context);
                             } catch (Throwable e) {
                                 log.warn("consumeMessage exception: {} Group: {} Msgs: {} MQ: {}",
@@ -517,7 +524,7 @@ public class ConsumeMessageOrderlyService implements ConsumeMessageService {
                                     msgs,
                                     messageQueue);
                             }
-
+                            // Consumer 消费 RT
                             long consumeRT = System.currentTimeMillis() - beginTimestamp;
                             if (null == status) {
                                 if (hasException) {
@@ -540,7 +547,7 @@ public class ConsumeMessageOrderlyService implements ConsumeMessageService {
                             if (null == status) {
                                 status = ConsumeOrderlyStatus.SUSPEND_CURRENT_QUEUE_A_MOMENT;
                             }
-
+                            // 消费后置钩子函数
                             if (ConsumeMessageOrderlyService.this.defaultMQPushConsumerImpl.hasHook()) {
                                 consumeMessageContext.setStatus(status.toString());
                                 consumeMessageContext
@@ -548,7 +555,7 @@ public class ConsumeMessageOrderlyService implements ConsumeMessageService {
                                 consumeMessageContext.setAccessChannel(defaultMQPushConsumer.getAccessChannel());
                                 ConsumeMessageOrderlyService.this.defaultMQPushConsumerImpl.executeHookAfter(consumeMessageContext);
                             }
-
+                            // 记录 Consumer RT
                             ConsumeMessageOrderlyService.this.getConsumerStatsManager()
                                 .incConsumeRT(ConsumeMessageOrderlyService.this.consumerGroup, messageQueue.getTopic(), consumeRT);
 
@@ -562,7 +569,7 @@ public class ConsumeMessageOrderlyService implements ConsumeMessageService {
                         log.warn("the message queue not be able to consume, because it's dropped. {}", this.messageQueue);
                         return;
                     }
-
+                    // 延迟消费
                     ConsumeMessageOrderlyService.this.tryLockLaterAndReconsume(this.messageQueue, this.processQueue, 100);
                 }
             }

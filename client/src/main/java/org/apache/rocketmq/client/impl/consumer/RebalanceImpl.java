@@ -50,7 +50,9 @@ public abstract class RebalanceImpl {
 
     protected final ConcurrentMap<MessageQueue, ProcessQueue> processQueueTable = new ConcurrentHashMap<>(64);
     protected final ConcurrentMap<MessageQueue, PopProcessQueue> popProcessQueueTable = new ConcurrentHashMap<>(64);
-
+    /**
+     * topic 下的队列信息
+     */
     protected final ConcurrentMap<String/* topic */, Set<MessageQueue>> topicSubscribeInfoTable =
         new ConcurrentHashMap<>();
     protected final ConcurrentMap<String /* topic */, SubscriptionData> subscriptionInner =
@@ -149,6 +151,9 @@ public abstract class RebalanceImpl {
         return result;
     }
 
+    /**
+     * 判断队列在 broker 中是否存在
+     */
     public boolean lock(final MessageQueue mq) {
         FindBrokerResult findBrokerResult = this.mQClientFactory.findBrokerAddressInSubscribe(this.mQClientFactory.getBrokerNameFromMessageQueue(mq), MixAll.MASTER_ID, true);
         if (findBrokerResult != null) {
@@ -269,6 +274,7 @@ public abstract class RebalanceImpl {
         boolean balanced = true;
         switch (messageModel) {
             case BROADCASTING: {
+                // 当前 topic 下的队列列表
                 Set<MessageQueue> mqSet = this.topicSubscribeInfoTable.get(topic);
                 if (mqSet != null) {
                     boolean changed = this.updateProcessQueueTableInRebalance(topic, mqSet, false);

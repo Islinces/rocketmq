@@ -39,7 +39,9 @@ public class MessageSysFlag {
     public final static int BORNHOST_V6_FLAG = 0x1 << 4;
     public final static int STOREHOSTADDRESS_V6_FLAG = 0x1 << 5;
     //Mark the flag for batch to avoid conflict
+    // 消息是否需要解包，在存储时可能被包装了一层
     public final static int NEED_UNWRAP_FLAG = 0x1 << 6;
+    // 客户端批量发送消息标记位，会包装成一条消息，客户端消费时需要还原成多条
     public final static int INNER_BATCH_FLAG = 0x1 << 7;
 
     // COMPRESSION_TYPE

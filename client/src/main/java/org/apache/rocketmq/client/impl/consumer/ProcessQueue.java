@@ -76,7 +76,7 @@ public class ProcessQueue {
         if (pushConsumer.isConsumeOrderly()) {
             return;
         }
-
+        // 固定循环次数，未消费数据量可能比较大，避免长时间阻塞消费
         int loop = Math.min(msgTreeMap.size(), 16);
         for (int i = 0; i < loop; i++) {
             MessageExt msg = null;
@@ -85,6 +85,7 @@ public class ProcessQueue {
                 try {
                     if (!msgTreeMap.isEmpty()) {
                         String consumeStartTimeStamp = MessageAccessor.getConsumeStartTimeStamp(msgTreeMap.firstEntry().getValue());
+                        // 消费队列第一条消息超过指定时间未消费
                         if (StringUtils.isNotEmpty(consumeStartTimeStamp) && System.currentTimeMillis() - Long.parseLong(consumeStartTimeStamp) > pushConsumer.getConsumeTimeout() * 60 * 1000) {
                             msg = msgTreeMap.firstEntry().getValue();
                         }
@@ -101,12 +102,13 @@ public class ProcessQueue {
             }
 
             try {
-
+                // 重新投递到 broker，再次消费
                 pushConsumer.sendMessageBack(msg, 3);
                 log.info("send expire msg back. topic={}, msgId={}, storeHost={}, queueId={}, queueOffset={}", msg.getTopic(), msg.getMsgId(), msg.getStoreHost(), msg.getQueueId(), msg.getQueueOffset());
                 try {
                     this.treeMapLock.writeLock().lockInterruptibly();
                     try {
+                        // msg 在此过程中未消费，从消费队列中删除
                         if (!msgTreeMap.isEmpty() && msg.getQueueOffset() == msgTreeMap.firstKey()) {
                             try {
                                 removeMessage(Collections.singletonList(msg));
@@ -129,6 +131,7 @@ public class ProcessQueue {
     public boolean putMessage(final List<MessageExt> msgs) {
         boolean dispatchToConsume = false;
         try {
+            // 锁住当前消费队列，将拉取的消息放入缓存中
             this.treeMapLock.writeLock().lockInterruptibly();
             try {
                 int validMsgCnt = 0;
@@ -321,6 +324,7 @@ public class ProcessQueue {
                         Map.Entry<Long, MessageExt> entry = this.msgTreeMap.pollFirstEntry();
                         if (entry != null) {
                             result.add(entry.getValue());
+                            // 记录本地消费的消息，在 ack 失败的时候，将其放回来
                             consumingMsgOrderlyTreeMap.put(entry.getKey(), entry.getValue());
                         } else {
                             break;

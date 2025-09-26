@@ -83,6 +83,7 @@ public class ConsumeMessagePopOrderlyService implements ConsumeMessageService {
 
     @Override
     public void start() {
+        // 请求 broker 锁定消费队列
         if (MessageModel.CLUSTERING.equals(ConsumeMessagePopOrderlyService.this.defaultMQPushConsumerImpl.messageModel())) {
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override

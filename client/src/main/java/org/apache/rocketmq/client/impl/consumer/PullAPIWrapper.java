@@ -73,9 +73,10 @@ public class PullAPIWrapper {
     public PullResult processPullResult(final MessageQueue mq, final PullResult pullResult,
         final SubscriptionData subscriptionData) {
         PullResultExt pullResultExt = (PullResultExt) pullResult;
-
+        // 更新当前队列从哪个 broker 上拉取数据的
         this.updatePullFromWhichNode(mq, pullResultExt.getSuggestWhichBrokerId());
         if (PullStatus.FOUND == pullResult.getPullStatus()) {
+            // 反序列化消息数据
             ByteBuffer byteBuffer = ByteBuffer.wrap(pullResultExt.getMessageBinary());
             List<MessageExt> msgList = MessageDecoder.decodesBatch(
                 byteBuffer,
@@ -83,7 +84,7 @@ public class PullAPIWrapper {
                 this.mQClientFactory.getClientConfig().isDecodeDecompressBody(),
                 true
             );
-
+            // 本次批量拉取的消息中是否存在需要解包的数据
             boolean needDecodeInnerMessage = false;
             for (MessageExt messageExt: msgList) {
                 if (MessageSysFlag.check(messageExt.getSysFlag(), MessageSysFlag.INNER_BATCH_FLAG)
@@ -96,6 +97,7 @@ public class PullAPIWrapper {
                 List<MessageExt> innerMsgList = new ArrayList<>();
                 try {
                     for (MessageExt messageExt: msgList) {
+                        // 解包一个消息为多条消息
                         if (MessageSysFlag.check(messageExt.getSysFlag(), MessageSysFlag.INNER_BATCH_FLAG)
                             && MessageSysFlag.check(messageExt.getSysFlag(), MessageSysFlag.NEED_UNWRAP_FLAG)) {
                             MessageDecoder.decodeMessage(messageExt, innerMsgList);
@@ -110,6 +112,7 @@ public class PullAPIWrapper {
             }
 
             List<MessageExt> msgListFilterAgain = msgList;
+            // 根据 tag 二次过滤消息，避免因为客户端和 broker 订阅信息不一致时造成的影响
             if (!subscriptionData.getTagsSet().isEmpty() && !subscriptionData.isClassFilterMode()) {
                 msgListFilterAgain = new ArrayList<>(msgList.size());
                 for (MessageExt msg : msgList) {
@@ -120,7 +123,7 @@ public class PullAPIWrapper {
                     }
                 }
             }
-
+            // 拉取消息后自定义消息过滤钩子函数
             if (this.hasHook()) {
                 FilterMessageContext filterMessageContext = new FilterMessageContext();
                 filterMessageContext.setUnitMode(unitMode);
@@ -129,6 +132,7 @@ public class PullAPIWrapper {
             }
 
             for (MessageExt msg : msgListFilterAgain) {
+                // 是否事务消息
                 String traFlag = msg.getProperty(MessageConst.PROPERTY_TRANSACTION_PREPARED);
                 if (Boolean.parseBoolean(traFlag)) {
                     msg.setTransactionId(msg.getProperty(MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX));
