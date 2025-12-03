@@ -82,6 +82,7 @@ public class NamesrvStartup {
     }
 
     public static void parseCommandlineAndConfigFile(String[] args) throws Exception {
+        // 版本号
         System.setProperty(RemotingCommand.REMOTING_VERSION_KEY, Integer.toString(MQVersion.CURRENT_VERSION));
 
         Options options = ServerUtil.buildCommandlineOptions(new Options());
@@ -141,6 +142,7 @@ public class NamesrvStartup {
     public static NamesrvController createAndStartNamesrvController() throws Exception {
 
         NamesrvController controller = createNamesrvController();
+        // 启动 nameserver
         start(controller);
         NettyServerConfig serverConfig = controller.getNettyServerConfig();
         String tip = String.format("The Name Server boot success. serializeType=%s, address %s:%d", RemotingCommand.getSerializeTypeConfigInThisServer(), serverConfig.getBindAddress(), serverConfig.getListenPort());
@@ -162,18 +164,18 @@ public class NamesrvStartup {
         if (null == controller) {
             throw new IllegalArgumentException("NamesrvController is null");
         }
-
+        // 初始化组件
         boolean initResult = controller.initialize();
         if (!initResult) {
             controller.shutdown();
             System.exit(-3);
         }
-
+        // 优雅关闭
         Runtime.getRuntime().addShutdownHook(new ShutdownHookThread(log, (Callable<Void>) () -> {
             controller.shutdown();
             return null;
         }));
-
+        // 启动组件
         controller.start();
 
         return controller;

@@ -99,11 +99,17 @@ public class NamesrvController {
     }
 
     public boolean initialize() {
+        // 加载 kvConfig.json 配置
+        // 自定义 kv 配置
         loadConfig();
         initiateNetworkComponents();
+        // 初始化客户端请求线程池、内部请求线程池
         initiateThreadExecutors();
+        // 初始化内部请求处理器，客户端查询 topic 路由信息处理器
         registerProcessor();
+        // 一些定时任务，扫描 broker，当前状态
         startScheduleService();
+        // ssl 监听
         initiateSslContext();
         initiateRpcHooks();
         return true;
@@ -114,6 +120,7 @@ public class NamesrvController {
     }
 
     private void startScheduleService() {
+        // 扫描并请求有问题的 broker
         this.scanExecutorService.scheduleAtFixedRate(NamesrvController.this.routeInfoManager::scanNotActiveBroker,
             5000, this.namesrvConfig.getScanNotActiveBrokerInterval(), TimeUnit.MILLISECONDS);
 
@@ -208,13 +215,15 @@ public class NamesrvController {
         } else {
             // Support get route info only temporarily
             ClientRequestProcessor clientRequestProcessor = new ClientRequestProcessor(this);
+            // 客户端查询 topic 路由信息处理器
             this.remotingServer.registerProcessor(RequestCode.GET_ROUTEINFO_BY_TOPIC, clientRequestProcessor, this.clientRequestExecutor);
-
+            // 非客户端请求处理器
             this.remotingServer.registerDefaultProcessor(new DefaultRequestProcessor(this), this.defaultExecutor);
         }
     }
 
     private void initiateRpcHooks() {
+        // 分区隔离
         this.remotingServer.registerRPCHook(new ZoneRouteRPCHook());
     }
 

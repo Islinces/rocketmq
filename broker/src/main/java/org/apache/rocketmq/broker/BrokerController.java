@@ -827,11 +827,17 @@ public class BrokerController {
         if (null != configStorage) {
             result = configStorage.start();
         }
+        // 主题配置
         result = result && this.topicConfigManager.load();
+        // 主题队列映射
         result = result && this.topicQueueMappingManager.load();
+        // 消费者偏移量
         result = result && this.consumerOffsetManager.load();
+        // 订阅组配置
         result = result && this.subscriptionGroupManager.load();
+        // 消费者过滤器
         result = result && this.consumerFilterManager.load();
+        // 消费者顺序信息
         result = result && this.consumerOrderInfoManager.load();
         return result;
     }
@@ -840,26 +846,31 @@ public class BrokerController {
         boolean result = true;
         try {
             DefaultMessageStore defaultMessageStore;
+            // 根据配置创建消息存储实现
             if (this.messageStoreConfig.isEnableRocksDBStore()) {
                 defaultMessageStore = new RocksDBMessageStore(this.messageStoreConfig, this.brokerStatsManager, this.messageArrivingListener, this.brokerConfig, topicConfigManager.getTopicConfigTable());
             } else {
                 defaultMessageStore = new DefaultMessageStore(this.messageStoreConfig, this.brokerStatsManager, this.messageArrivingListener, this.brokerConfig, topicConfigManager.getTopicConfigTable());
             }
-
+            // DLeger 模式处理
             if (messageStoreConfig.isEnableDLegerCommitLog()) {
                 DLedgerRoleChangeHandler roleChangeHandler =
                     new DLedgerRoleChangeHandler(this, defaultMessageStore);
+                    // 注册角色变更处理器
                 ((DLedgerCommitLog) defaultMessageStore.getCommitLog())
                     .getdLedgerServer().getDLedgerLeaderElector().addRoleChangeHandler(roleChangeHandler);
             }
-
+            
             this.brokerStats = new BrokerStats(defaultMessageStore);
 
             // Load store plugin
             MessageStorePluginContext context = new MessageStorePluginContext(
                 messageStoreConfig, brokerStatsManager, messageArrivingListener, brokerConfig, configuration);
+            // 加载存储插件
             this.messageStore = MessageStoreFactory.build(context, defaultMessageStore);
+            // 
             this.messageStore.getDispatcherList().addFirst(new CommitLogDispatcherCalcBitMap(this.brokerConfig, this.consumerFilterManager));
+            // 定时消息处理
             if (messageStoreConfig.isTimerWheelEnable()) {
                 this.timerCheckpoint = new TimerCheckpoint(BrokerPathConfigHelper.getTimerCheckPath(messageStoreConfig.getStorePathRootDir()));
                 TimerMetrics timerMetrics = new TimerMetrics(BrokerPathConfigHelper.getTimerMetricsPath(messageStoreConfig.getStorePathRootDir()));
@@ -875,12 +886,12 @@ public class BrokerController {
     }
 
     public boolean initialize() throws CloneNotSupportedException {
-
+        // 元数据初始化（订阅组、主题、消费者偏移量、消费者过滤器、消费者顺序信息）
         boolean result = this.initializeMetadata();
         if (!result) {
             return false;
         }
-
+        // 消息存储初始化
         result = this.initializeMessageStore();
         if (!result) {
             return false;
@@ -892,24 +903,25 @@ public class BrokerController {
     public boolean recoverAndInitService() throws CloneNotSupportedException {
 
         boolean result = true;
-
+        // controller 模式初始化
         if (this.brokerConfig.isEnableControllerMode()) {
             this.replicasManager = new ReplicasManager(this);
             this.replicasManager.setFenced(true);
         }
-
+        // 消息存储加载
         if (messageStore != null) {
             registerMessageStoreHook();
             result = this.messageStore.load();
         }
-
+        // 定时消息存储加载
         if (messageStoreConfig.isTimerWheelEnable()) {
             result = result && this.timerMessageStore.load();
         }
 
         //scheduleMessageService load after messageStore load success
+        // 延迟消息服务加载
         result = result && this.scheduleMessageService.load();
-
+        
         for (BrokerAttachedPlugin brokerAttachedPlugin : brokerAttachedPlugins) {
             if (brokerAttachedPlugin != null) {
                 result = result && brokerAttachedPlugin.load();
@@ -919,19 +931,19 @@ public class BrokerController {
         this.brokerMetricsManager = new BrokerMetricsManager(this);
 
         if (result) {
-
+            // 初始化网络组件
             initializeRemotingServer();
-
+            // 初始化资源，各种线程池，发送消息、接收消息、消息确认等等
             initializeResources();
-
+            // 注册请求处理器
             registerProcessor();
-
+            // 初始化定时任务
             initializeScheduledTasks();
-
+            // 事务相关初始化
             initialTransaction();
-
+            // RPC Hook 初始化
             initialRpcHooks();
-
+            // 请求管道初始化
             initialRequestPipeline();
 
             if (TlsSystemConfig.tlsMode != TlsMode.DISABLED) {

@@ -263,12 +263,15 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         null);
                 }
 
+                // 初始化和 broker 链接
                 if (startFactory) {
                     mQClientFactory.start();
                 }
 
                 this.initTopicRoute();
-
+                // 启动一个定时线程尝试恢复broker（请求 broker 失败时会记录下来），
+                // 随机broker 中的一个 topic，获取下 offset，可以去用成功，就认为 broker 正常了，
+                // 将 reachable 设置为 true
                 this.mqFaultStrategy.startDetector();
 
                 log.info("the producer [{}] start OK. sendMessageWithVIPChannel={}", this.defaultMQProducer.getProducerGroup(),
@@ -286,8 +289,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                 break;
         }
 
+        // 发送心跳
         this.mQClientFactory.sendHeartbeatToAllBrokerWithLock();
-
+        // 启动定时任务线程，扫描超时且还未发送的异步请求，将超时请求从请求列表中移除，同时更新请求状态，便于触发 callback 的 onException 方法
         RequestFutureHolder.getInstance().startScheduledTask(this);
 
     }

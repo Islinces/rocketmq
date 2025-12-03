@@ -241,6 +241,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
 
         nettyEventExecutor.start();
 
+        // 扫描已发送到 broker 且请求超时的异步请求
         TimerTask timerTaskScanResponseTable = new TimerTask() {
             @Override
             public void run(Timeout timeout) {
@@ -249,12 +250,13 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
                 } catch (Throwable e) {
                     LOGGER.error("scanResponseTable exception", e);
                 } finally {
+                    // 后续再次执行
                     timer.newTimeout(this, 1000, TimeUnit.MILLISECONDS);
                 }
             }
         };
         this.timer.newTimeout(timerTaskScanResponseTable, 1000 * 3, TimeUnit.MILLISECONDS);
-
+        // 清理故障的 namesrv 节点
         if (nettyClientConfig.isScanAvailableNameSrv()) {
             int connectTimeoutMillis = this.nettyClientConfig.getConnectTimeoutMillis();
             TimerTask timerTaskScanAvailableNameSrv = new TimerTask() {
@@ -265,6 +267,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
                     } catch (Exception e) {
                         LOGGER.error("scanAvailableNameSrv exception", e);
                     } finally {
+                        // 后续定时执行
                         timer.newTimeout(this, connectTimeoutMillis, TimeUnit.MILLISECONDS);
                     }
                 }

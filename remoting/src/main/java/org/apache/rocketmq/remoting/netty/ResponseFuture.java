@@ -63,6 +63,7 @@ public class ResponseFuture {
         if (invokeCallback != null) {
             if (this.executeCallbackOnlyOnce.compareAndSet(false, true)) {
                 RemotingCommand response = getResponseCommand();
+                // response 不为空的时候表示执行成功了，否则就是失败
                 if (response != null) {
                     invokeCallback.operationSucceed(response);
                 } else {

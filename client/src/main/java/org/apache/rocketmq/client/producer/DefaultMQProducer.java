@@ -373,10 +373,18 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     @Override
     public void start() throws MQClientException {
         this.setProducerGroup(withNamespace(this.producerGroup));
+        // Push 模式：
+        // 在启动的时候会触发 Rebalance#doBalance 方法，在获取到分配的队列之后就会触发 dispatchPullRequest() 方法，
+        // 内部会创建 PullRequest，通过 PullRequest 调用 broker 拉取消息
+        // Consumer 消费消息之后，根据拉取间隔配置定时生成 PullRequest，继而达成 Push 的目的
+
+        // Pull 模式：
+        // 需要业务端手动拉取消息，然后消费
         this.defaultMQProducerImpl.start();
         if (this.produceAccumulator != null) {
             this.produceAccumulator.start();
         }
+        // 异步收集消息在 Producer 和 Consumer 之间的轨迹
         if (enableTrace) {
             try {
                 AsyncTraceDispatcher dispatcher = new AsyncTraceDispatcher(producerGroup, TraceDispatcher.Type.PRODUCE, getTraceMsgBatchNum(), traceTopic, rpcHook);

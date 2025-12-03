@@ -240,7 +240,7 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
         if (this.channelEventListener != null) {
             this.nettyEventExecutor.start();
         }
-
+        // 扫描超时未处理的请求，执行回调，通知调用方
         TimerTask timerScanResponseTable = new TimerTask() {
             @Override
             public void run(Timeout timeout) {
@@ -254,7 +254,7 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             }
         };
         this.timer.newTimeout(timerScanResponseTable, 1000 * 3, TimeUnit.MILLISECONDS);
-
+        // 定时打印每种请求的统计信息
         scheduledExecutorService.scheduleWithFixedDelay(() -> {
             try {
                 NettyRemotingServer.this.printRemotingCodeDistribution();

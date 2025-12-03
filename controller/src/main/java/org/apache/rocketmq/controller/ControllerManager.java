@@ -128,6 +128,7 @@ public class ControllerManager {
         this.heartbeatManager.initialize();
 
         // Register broker inactive listener
+        // 注册 broker 选主机制
         this.heartbeatManager.registerBrokerLifecycleListener(this::onBrokerInactive);
         this.controller.registerBrokerLifecycleListener(this::onBrokerInactive);
         registerProcessor();

@@ -153,11 +153,15 @@ public class BrokerStartup {
 
     public static BrokerController buildBrokerController(ConfigContext configContext) {
         System.setProperty(RemotingCommand.REMOTING_VERSION_KEY, Integer.toString(MQVersion.CURRENT_VERSION));
-
+        // broker 基本配置
         BrokerConfig brokerConfig = configContext.getBrokerConfig();
+        // 消息存储配置
         MessageStoreConfig messageStoreConfig = configContext.getMessageStoreConfig();
+        // 网络客户端配置
         NettyClientConfig nettyClientConfig = configContext.getNettyClientConfig();
+        // 网络服务端配置
         NettyServerConfig nettyServerConfig = configContext.getNettyServerConfig();
+        // 认证配置
         AuthConfig authConfig = configContext.getAuthConfig();
         Properties properties = configContext.getProperties();
 
@@ -171,11 +175,13 @@ public class BrokerStartup {
         }
 
         // Validate namesrvAddr
+        // nameserver 集群地址
         String namesrvAddr = brokerConfig.getNamesrvAddr();
         if (StringUtils.isNotBlank(namesrvAddr)) {
             try {
                 String[] addrArray = namesrvAddr.split(";");
                 for (String addr : addrArray) {
+                    // 地址校验
                     NetworkUtil.string2SocketAddress(addr);
                 }
             } catch (Exception e) {
@@ -186,6 +192,7 @@ public class BrokerStartup {
         }
 
         // Set broker role according to ha config
+        // 未部署 Controller 集群时，手动配置 brokerId，以及 broker 主从节点
         if (!brokerConfig.isEnableControllerMode()) {
             switch (messageStoreConfig.getBrokerRole()) {
                 case ASYNC_MASTER:
@@ -206,7 +213,7 @@ public class BrokerStartup {
         if (messageStoreConfig.isEnableDLegerCommitLog()) {
             brokerConfig.setBrokerId(-1);
         }
-
+        // 不能同时开启 Controller 模式和 DLeger
         if (brokerConfig.isEnableControllerMode() && messageStoreConfig.isEnableDLegerCommitLog()) {
             System.out.printf("The config enableControllerMode and enableDLegerCommitLog cannot both be true.%n");
             System.exit(-4);
