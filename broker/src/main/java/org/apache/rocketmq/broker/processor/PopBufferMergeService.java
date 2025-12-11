@@ -91,6 +91,7 @@ public class PopBufferMergeService extends ServiceThread {
         // scan
         while (!this.isStopped()) {
             try {
+                // 默认从节点执行
                 if (!isShouldRunning()) {
                     // slave
                     this.waitForRunning(interval * 200 * 5);
@@ -100,7 +101,8 @@ public class PopBufferMergeService extends ServiceThread {
                     this.commitOffsets.clear();
                     continue;
                 }
-
+                // 默认主节点执行以下逻辑
+                // 将在内存中缓存过久的 CK 持久化到 commitlog 中
                 scan();
                 if (scanTimes % countOfSecond30 == 0) {
                     scanGarbage();
@@ -240,11 +242,13 @@ public class PopBufferMergeService extends ServiceThread {
 
             boolean removeCk = !this.serving;
             // ck will be timeout
+            // ck 在内存中超时未 ack，3s
             if (point.getReviveTime() - now < brokerController.getBrokerConfig().getPopCkStayBufferTimeOut()) {
                 removeCk = true;
             }
 
             // the time stayed is too long
+            // ck 在内存中停留太久，10s
             if (now - point.getPopTime() > brokerController.getBrokerConfig().getPopCkStayBufferTime()) {
                 removeCk = true;
             }
@@ -511,6 +515,7 @@ public class PopBufferMergeService extends ServiceThread {
     }
 
     public boolean addAk(int reviveQid, AckMsg ackMsg) {
+        // 是否开启内存 CK
         if (!brokerController.getBrokerConfig().isEnablePopBufferMerge()) {
             return false;
         }
@@ -518,6 +523,8 @@ public class PopBufferMergeService extends ServiceThread {
             return false;
         }
         try {
+            // 内存中没有 checkPoint
+            // 可能已经刷到磁盘了
             PopCheckPointWrapper pointWrapper = this.buffer.get(ackMsg.getTopic() + ackMsg.getConsumerGroup() + ackMsg.getQueueId() + ackMsg.getStartOffset() + ackMsg.getPopTime() + ackMsg.getBrokerName());
             if (pointWrapper == null) {
                 if (brokerController.getBrokerConfig().isEnablePopLog()) {
@@ -532,7 +539,7 @@ public class PopBufferMergeService extends ServiceThread {
 
             PopCheckPoint point = pointWrapper.getCk();
             long now = System.currentTimeMillis();
-
+            // ck 在内存中超时了，4.5s
             if (point.getReviveTime() - now < brokerController.getBrokerConfig().getPopCkStayBufferTimeOut() + 1500) {
                 if (brokerController.getBrokerConfig().isEnablePopLog()) {
                     POP_LOGGER.warn("[PopBuffer]add ack fail, rqId={}, almost timeout for revive, {}, {}, {}", reviveQid, pointWrapper, ackMsg, now);
@@ -559,6 +566,8 @@ public class PopBufferMergeService extends ServiceThread {
             } else {
                 int indexOfAck = point.indexOfAck(ackMsg.getAckOffset());
                 if (indexOfAck > -1) {
+                    // cas 更新 ck 已经 ack 了
+                    // 等待下次 scan 的时候将对应数据从 buffer 中删除
                     markBitCAS(pointWrapper.getBits(), indexOfAck);
                 } else {
                     POP_LOGGER.error("[PopBuffer]Invalid index of ack, reviveQid={}, {}, {}", reviveQid, ackMsg, point);

@@ -94,6 +94,7 @@ public class RemotingProtocolServer implements StartAndShutdown, RemotingProxyOu
 
 
     public RemotingProtocolServer(MessagingProcessor messagingProcessor, TlsCertificateManager tlsCertificateManager) throws Exception {
+        // proxy 层请求处理器
         this.messagingProcessor = messagingProcessor;
         this.remotingChannelManager = new RemotingChannelManager(this, messagingProcessor.getProxyRelayService());
 

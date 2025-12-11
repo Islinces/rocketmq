@@ -219,6 +219,8 @@ public class FlatMessageFile implements FlatFileInterface {
 
     @Override
     public long getConsumeQueueMinOffset() {
+        // 取 consumeQueue 和 commitlog 的最小值
+        // 原因：在查询的时候，可能还在同步过程中，这个过程是先同步 commitlog，再 consumeQueue
         long cqOffset = consumeQueue.getMinOffset() / MessageFormatUtil.CONSUME_QUEUE_UNIT_SIZE;
         long effectiveOffset = this.commitLog.getMinOffsetFromFile();
         return Math.max(cqOffset, effectiveOffset);

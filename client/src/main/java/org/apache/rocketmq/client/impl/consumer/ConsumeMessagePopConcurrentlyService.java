@@ -252,6 +252,9 @@ public class ConsumeMessagePopConcurrentlyService implements ConsumeMessageServi
         for (int i = ackIndex + 1; i < consumeRequest.getMsgs().size(); i++) {
             MessageExt msgExt = consumeRequest.getMsgs().get(i);
             consumeRequest.getPopProcessQueue().ack();
+            // 重试次数超过上限，默认 16 次
+            // 1.很长时间都没有消费成功，则直接 ack，兜底逻辑
+            // 2.延长消息不可见时间
             if (msgExt.getReconsumeTimes() >= this.defaultMQPushConsumerImpl.getMaxReconsumeTimes()) {
                 checkNeedAckOrDelay(msgExt);
                 continue;
@@ -266,6 +269,8 @@ public class ConsumeMessagePopConcurrentlyService implements ConsumeMessageServi
         int[] delayLevelTable = this.defaultMQPushConsumerImpl.getPopDelayLevel();
 
         long msgDelaytime = System.currentTimeMillis() - msgExt.getBornTimestamp();
+        // 消息从产生到目前的时间若大于最大延迟时间很久则 ack 该消息，那么消息相当于丢失了
+        // 否则给消息增加不可见时间，延迟消费
         if (msgDelaytime > delayLevelTable[delayLevelTable.length - 1] * 1000 * 2) {
             log.warn("Consume too many times, ack message async. message {}", msgExt.toString());
             this.defaultMQPushConsumerImpl.ackAsync(msgExt, consumerGroup);

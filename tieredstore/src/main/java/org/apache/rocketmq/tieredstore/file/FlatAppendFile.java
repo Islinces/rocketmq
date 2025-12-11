@@ -234,6 +234,7 @@ public class FlatAppendFile {
     public CompletableFuture<ByteBuffer> readAsync(long offset, int length) {
         List<FileSegment> fileSegmentList = this.fileSegmentTable;
         int index = fileSegmentList.size() - 1;
+        // 确定查询的 offset 对应的 fileSegment 位置
         for (; index >= 0; index--) {
             if (fileSegmentList.get(index).getBaseOffset() <= offset) {
                 break;
@@ -241,13 +242,15 @@ public class FlatAppendFile {
         }
 
         FileSegment fileSegment1 = fileSegmentList.get(index);
+        // 判断下拉取的消息是否跨 segment
         FileSegment fileSegment2 = offset + length > fileSegment1.getCommitOffset() &&
             fileSegmentList.size() > index + 1 ? fileSegmentList.get(index + 1) : null;
-
+        // 没有跨 segment
         if (fileSegment2 == null) {
             return fileSegment1.readAsync(offset - fileSegment1.getBaseOffset(), length);
         }
-
+        // 跨 segment 拉取
+        // 先计算出segment1的长度
         int segment1Length = (int) (fileSegment1.getCommitOffset() - offset);
         return fileSegment1.readAsync(offset - fileSegment1.getBaseOffset(), segment1Length)
             .thenCombine(fileSegment2.readAsync(0, length - segment1Length),

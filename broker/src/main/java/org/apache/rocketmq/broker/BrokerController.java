@@ -867,6 +867,7 @@ public class BrokerController {
             MessageStorePluginContext context = new MessageStorePluginContext(
                 messageStoreConfig, brokerStatsManager, messageArrivingListener, brokerConfig, configuration);
             // 加载存储插件
+            // 支持分层存储
             this.messageStore = MessageStoreFactory.build(context, defaultMessageStore);
             // 
             this.messageStore.getDispatcherList().addFirst(new CommitLogDispatcherCalcBitMap(this.brokerConfig, this.consumerFilterManager));

@@ -108,7 +108,7 @@ public class QueryAssignmentProcessor implements NettyRequestProcessor {
 
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
         final QueryAssignmentResponseBody responseBody = new QueryAssignmentResponseBody();
-
+        // 消费者组对当前 Topic 的配置信息
         SetMessageRequestModeRequestBody setMessageRequestModeRequestBody = this.messageRequestModeManager.getMessageRequestMode(topic, consumerGroup);
 
         if (setMessageRequestModeRequestBody == null) {
@@ -120,6 +120,7 @@ public class QueryAssignmentProcessor implements NettyRequestProcessor {
                 // retry topic must be pull mode
                 setMessageRequestModeRequestBody.setMode(MessageRequestMode.PULL);
             } else {
+                // 没有的话，使用 broker 配置的
                 setMessageRequestModeRequestBody.setMode(brokerController.getBrokerConfig().getDefaultMessageRequestMode());
             }
 
@@ -168,6 +169,7 @@ public class QueryAssignmentProcessor implements NettyRequestProcessor {
         final TopicRouteInfoManager topicRouteInfoManager = this.brokerController.getTopicRouteInfoManager();
 
         switch (messageModel) {
+            // 广播模式：返回 Topic 下所有队列
             case BROADCASTING: {
                 assignedQueueSet = topicRouteInfoManager.getTopicSubscribeInfo(topic);
                 if (assignedQueueSet == null) {
@@ -190,7 +192,7 @@ public class QueryAssignmentProcessor implements NettyRequestProcessor {
                     }
                     return null;
                 }
-
+                // 是否开启服务端重平衡
                 if (!brokerController.getBrokerConfig().isServerLoadBalancerEnable()) {
                     return mqSet;
                 }
@@ -259,17 +261,22 @@ public class QueryAssignmentProcessor implements NettyRequestProcessor {
         } else {
             if (cidAll.size() <= mqAll.size()) {
                 //consumer working in pop mode could share the MessageQueues assigned to the N (N = popWorkGroupSize) consumer following it in the cid list
+                // 当前消费者本来就应该分配到的队列，也就是基础队列
                 allocateResult = allocateMessageQueueStrategy.allocate(consumerGroup, clientId, mqAll, cidAll);
                 int index = cidAll.indexOf(clientId);
+                // popShareQueueNum表示当前消费者需要共享的物理队列数量
                 if (index >= 0) {
                     for (int i = 1; i <= popShareQueueNum; i++) {
                         index++;
                         index = index % cidAll.size();
+                        // 获取下一个消费者应该分配的队列数量
+                        // 加入到当前消费者分配的队列中，提高并发度
                         List<MessageQueue> tmp = allocateMessageQueueStrategy.allocate(consumerGroup, cidAll.get(index), mqAll, cidAll);
                         allocateResult.addAll(tmp);
                     }
                 }
             } else {
+                // 兜底逻辑，尽量保证每个消费者都能分配到队列
                 //make sure each cid is assigned
                 allocateResult = allocate(consumerGroup, clientId, mqAll, cidAll);
             }

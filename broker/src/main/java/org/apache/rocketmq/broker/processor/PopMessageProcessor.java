@@ -243,41 +243,42 @@ public class PopMessageProcessor implements NettyRequestProcessor {
         final PopMessageResponseHeader responseHeader = (PopMessageResponseHeader) response.readCustomHeader();
 
         // Pop mode only supports consumption in cluster load balancing mode
+        // 强制 Pop 请求使用集群模式，避免消费者未初始化或配置错误的情况
         brokerController.getConsumerManager().compensateBasicConsumerInfo(
             requestHeader.getConsumerGroup(), ConsumeType.CONSUME_POP, MessageModel.CLUSTERING);
 
         if (brokerController.getBrokerConfig().isEnablePopLog()) {
             POP_LOGGER.info("receive PopMessage request command, {}", request);
         }
-
+        // 客户端发起 Pop 请求时会设置 pollTime，此时校验下，从发起请求到 broker 这个过程中是否超时
         if (requestHeader.isTimeoutTooMuch()) {
             response.setCode(ResponseCode.POLLING_TIMEOUT);
             response.setRemark(String.format("the broker[%s] pop message is timeout too much",
                 this.brokerController.getBrokerConfig().getBrokerIP1()));
             return response;
         }
-
+        // 当前 broker 是否允许 Pop 消息
         if (!PermName.isReadable(this.brokerController.getBrokerConfig().getBrokerPermission())) {
             response.setCode(ResponseCode.NO_PERMISSION);
             response.setRemark(String.format("the broker[%s] pop message is forbidden",
                 this.brokerController.getBrokerConfig().getBrokerIP1()));
             return response;
         }
-
+        // Pop 模式一次请求最多拉去 32 条消息
         if (requestHeader.getMaxMsgNums() > 32) {
             response.setCode(ResponseCode.INVALID_PARAMETER);
             response.setRemark(String.format("the broker[%s] pop message's num is greater than 32",
                 this.brokerController.getBrokerConfig().getBrokerIP1()));
             return response;
         }
-
+        // store 是否开启时间轮
         if (!brokerController.getMessageStore().getMessageStoreConfig().isTimerWheelEnable()) {
             response.setCode(ResponseCode.SYSTEM_ERROR);
             response.setRemark(String.format("the broker[%s] pop message is forbidden because timerWheelEnable is false",
                 this.brokerController.getBrokerConfig().getBrokerIP1()));
             return response;
         }
-
+        // Topic 信息
         TopicConfig topicConfig =
             this.brokerController.getTopicConfigManager().selectTopicConfig(requestHeader.getTopic());
         if (null == topicConfig) {
@@ -288,13 +289,13 @@ public class PopMessageProcessor implements NettyRequestProcessor {
                 FAQUrl.suggestTodo(FAQUrl.APPLY_TOPIC_URL)));
             return response;
         }
-
+        // Topic 是否可以拉取消息
         if (!PermName.isReadable(topicConfig.getPerm())) {
             response.setCode(ResponseCode.NO_PERMISSION);
             response.setRemark("the topic[" + requestHeader.getTopic() + "] peeking message is forbidden");
             return response;
         }
-
+        // 拉取队列不合法
         if (requestHeader.getQueueId() >= topicConfig.getReadQueueNums()) {
             String errorInfo = String.format("queueId[%d] is illegal, topic:[%s] topicConfig.readQueueNums:[%d] " +
                     "consumer:[%s]",
@@ -305,7 +306,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
             response.setRemark(errorInfo);
             return response;
         }
-
+        // 订阅组信息
         SubscriptionGroupConfig subscriptionGroupConfig =
             this.brokerController.getSubscriptionGroupManager().findSubscriptionGroupConfig(requestHeader.getConsumerGroup());
         if (null == subscriptionGroupConfig) {
@@ -314,7 +315,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
                 requestHeader.getConsumerGroup(), FAQUrl.suggestTodo(FAQUrl.SUBSCRIPTION_GROUP_NOT_EXIST)));
             return response;
         }
-
+        // 关闭了订阅组
         if (!subscriptionGroupConfig.isConsumeEnable()) {
             response.setCode(ResponseCode.NO_PERMISSION);
             response.setRemark("subscription group no permission, " + requestHeader.getConsumerGroup());
@@ -324,17 +325,23 @@ public class PopMessageProcessor implements NettyRequestProcessor {
         BrokerConfig brokerConfig = brokerController.getBrokerConfig();
         SubscriptionData subscriptionData = null;
         ExpressionMessageFilter messageFilter = null;
+        // 消费者订阅消息过滤器
+        // 比如根据 Tab 过滤
+        // 没有设置的话，订阅队列下所有消息
         if (requestHeader.getExp() != null && !requestHeader.getExp().isEmpty()) {
             try {
                 // origin topic
+                // 构建消息过滤器
                 subscriptionData = FilterAPI.build(
                     requestHeader.getTopic(), requestHeader.getExp(), requestHeader.getExpType());
                 brokerController.getConsumerManager().compensateSubscribeData(
                     requestHeader.getConsumerGroup(), requestHeader.getTopic(), subscriptionData);
 
                 // retry topic
+                // 失败重试 Topic
                 String retryTopic = KeyBuilder.buildPopRetryTopic(
                     requestHeader.getTopic(), requestHeader.getConsumerGroup(), brokerConfig.isEnableRetryTopicV2());
+                // 失败重试 Topic 消息过滤器
                 SubscriptionData retrySubscriptionData = FilterAPI.build(
                     retryTopic, SubscriptionData.SUB_ALL, requestHeader.getExpType());
                 brokerController.getConsumerManager().compensateSubscribeData(
@@ -467,6 +474,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
                 } else {
                     final GetMessageResult tmpGetMessageResult = getMessageResult;
                     try {
+                        // 零拷贝
                         FileRegion fileRegion = new ManyMessageTransfer(
                             response.encodeHeader(getMessageResult.getBufferTotalSize()), getMessageResult);
                         channel.writeAndFlush(fileRegion)
@@ -497,10 +505,12 @@ public class PopMessageProcessor implements NettyRequestProcessor {
         }
 
         int randomQ = random.nextInt(100);
+        // 计算当前 ACK 消息在 reviveTopic 的哪个队列中
         int reviveQid;
         if (requestHeader.isOrder()) {
             reviveQid = KeyBuilder.POP_ORDER_REVIVE_QUEUE;
         } else {
+            // 模运算，轮询放入每个队列
             reviveQid = (int) Math.abs(ckMessageNumber.getAndIncrement() %
                 this.brokerController.getBrokerConfig().getReviveQueueNum());
         }
@@ -684,6 +694,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
         String lockKey =
             topic + PopAckConstants.SPLIT + requestHeader.getConsumerGroup() + PopAckConstants.SPLIT + queueId;
         boolean isOrder = requestHeader.isOrder();
+        // 确定开始消费的位置
         long offset;
         try {
             offset = getPopOffset(topic, requestHeader.getConsumerGroup(), queueId, requestHeader.getInitMode(),
@@ -695,6 +706,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
         }
 
         CompletableFuture<Long> future = new CompletableFuture<>();
+        // CAS 方式尝试锁定队列
         if (!queueLockManager.tryLock(lockKey)) {
             try {
                 if (!requestHeader.isOrder()) {
@@ -706,8 +718,9 @@ public class PopMessageProcessor implements NettyRequestProcessor {
             }
             return future;
         }
-
+        // future 完成的时候释放队列锁
         future.whenComplete((result, throwable) -> queueLockManager.unLock(lockKey));
+        // broker 控制未 ack 消息数量，超过则不拉取消息
         if (isPopShouldStop(topic, requestHeader.getConsumerGroup(), queueId)) {
             POP_LOGGER.warn("Too much msgs unacked, then stop popping. topic={}, group={}, queueId={}",
                 topic, requestHeader.getConsumerGroup(), queueId);
@@ -721,6 +734,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
         }
 
         try {
+            // TODO：为什么多次调用
             offset = getPopOffset(topic, requestHeader.getConsumerGroup(), queueId, requestHeader.getInitMode(),
                 true, lockKey, true);
 
@@ -733,6 +747,9 @@ public class PopMessageProcessor implements NettyRequestProcessor {
             // When client ack message, long-polling request would be notifications
             // by AckMessageProcessor.ackOrderly() and message will not be delayed.
             if (isOrder) {
+                // 支持顺序消费，队列中消息是否 ack，未 ack 的话则不拉去消息，
+                // 会判断queueId 下最后被消费的数据是否是被当前 Pop 请求拉取的，
+                // 是的话则可以继续拉取
                 if (brokerController.getConsumerOrderInfoManager().checkBlock(
                     attemptId, topic, requestHeader.getConsumerGroup(), queueId, requestHeader.getInvisibleTime())) {
                     // should not add accumulation(max offset - consumer offset) here
@@ -742,7 +759,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
                 this.brokerController.getPopInflightMessageCounter().clearInFlightMessageNum(
                     topic, requestHeader.getConsumerGroup(), queueId);
             }
-
+            // 多次拉取后，已拉取消息数可能已经满足客户端要求
             if (getMessageResult.getMessageMapedList().size() >= requestHeader.getMaxMsgNums()) {
                 restNum = this.brokerController.getMessageStore().getMaxOffsetInQueue(topic, queueId) - offset + restNum;
                 future.complete(restNum);

@@ -216,6 +216,7 @@ public class TimerMessageStore {
     }
 
     public void initService() {
+        // 从
         enqueueGetService = new TimerEnqueueGetService();
         enqueuePutService = new TimerEnqueuePutService();
         dequeueWarmService = new TimerDequeueWarmService();

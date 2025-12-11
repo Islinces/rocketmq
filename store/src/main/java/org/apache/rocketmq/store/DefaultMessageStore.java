@@ -595,6 +595,10 @@ public class DefaultMessageStore implements MessageStore {
     public CompletableFuture<PutMessageResult> asyncPutMessage(MessageExtBrokerInner msg) {
 
         for (PutMessageHook putMessageHook : putMessageHookList) {
+            // 消息预处理
+            // 1.支持延迟消息，修改topic为重试 topic（rmq_sys_wheel_timer(只有一个 queue)、SCHEDULE_TOPIC_XXXX(一个延迟级别一个queue)）
+            // 2.消息体检查，body 大小等
+            // 3.批量消息是否支持
             PutMessageResult handleResult = putMessageHook.executeBeforePutMessage(msg);
             if (handleResult != null) {
                 return CompletableFuture.completedFuture(handleResult);
@@ -827,6 +831,7 @@ public class DefaultMessageStore implements MessageStore {
         Optional<TopicConfig> topicConfig = getTopicConfig(topic);
         CleanupPolicy policy = CleanupPolicyUtils.getDeletePolicy(topicConfig);
         //check request topic flag
+        // 当前 Topic 是否开启压缩
         if (Objects.equals(policy, CleanupPolicy.COMPACTION) && messageStoreConfig.isEnableCompaction()) {
             return compactionStore.getMessage(group, topic, queueId, offset, maxMsgNums, maxTotalMsgSize);
         } // else skip

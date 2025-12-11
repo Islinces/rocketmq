@@ -71,10 +71,16 @@ public class ProxyStartup {
             initConfiguration(commandLineArgument);
 
             // init thread pool monitor for proxy.
+            // 打印系统线程池状态
+            // 1.队列大小
+            // 2.队列首位请求间隔时间
             initThreadPoolMonitor();
-
+            // 业务逻辑线程池
+            // 给 grpc server 使用
             ThreadPoolExecutor executor = createServerExecutor();
-
+            // 请求处理器
+            // 1.Producer 发送消息等
+            // 2.Consumer 拉取消息等
             MessagingProcessor messagingProcessor = createMessagingProcessor();
 
             // tls cert update
@@ -82,6 +88,7 @@ public class ProxyStartup {
             PROXY_START_AND_SHUTDOWN.appendStartAndShutdown(tlsCertificateManager);
 
             // create grpcServer
+            // grpc sdk 支持
             GrpcServer grpcServer = GrpcServerBuilder.newBuilder(executor,
                     ConfigurationManager.getProxyConfig().getGrpcServerPort(), tlsCertificateManager)
                 .addService(createServiceProcessor(messagingProcessor))
@@ -91,7 +98,7 @@ public class ProxyStartup {
                 .shutdownTime(ConfigurationManager.getProxyConfig().getGrpcShutdownTimeSeconds(), TimeUnit.SECONDS)
                 .build();
             PROXY_START_AND_SHUTDOWN.appendStartAndShutdown(grpcServer);
-
+            // remoting 协议支持
             RemotingProtocolServer remotingServer = new RemotingProtocolServer(messagingProcessor, tlsCertificateManager);
             PROXY_START_AND_SHUTDOWN.appendStartAndShutdown(remotingServer);
 
@@ -179,6 +186,7 @@ public class ProxyStartup {
             ProxyMetricsManager proxyMetricsManager = ProxyMetricsManager.initClusterMode(ConfigurationManager.getProxyConfig());
             PROXY_START_AND_SHUTDOWN.appendStartAndShutdown(proxyMetricsManager);
         } else if (ProxyMode.isLocalMode(proxyModeStr)) {
+            // Broker 初始化
             BrokerController brokerController = createBrokerController();
             ProxyMetricsManager.initLocalMode(brokerController.getBrokerMetricsManager(), ConfigurationManager.getProxyConfig());
             StartAndShutdown brokerControllerWrapper = new StartAndShutdown() {

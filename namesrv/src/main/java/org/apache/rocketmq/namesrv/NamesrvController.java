@@ -16,12 +16,6 @@
  */
 package org.apache.rocketmq.namesrv;
 
-import java.util.Collections;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 import org.apache.rocketmq.common.ThreadFactoryImpl;
 import org.apache.rocketmq.common.constant.LoggerName;
@@ -42,14 +36,12 @@ import org.apache.rocketmq.remoting.Configuration;
 import org.apache.rocketmq.remoting.RemotingClient;
 import org.apache.rocketmq.remoting.RemotingServer;
 import org.apache.rocketmq.remoting.common.TlsMode;
-import org.apache.rocketmq.remoting.netty.NettyClientConfig;
-import org.apache.rocketmq.remoting.netty.NettyRemotingClient;
-import org.apache.rocketmq.remoting.netty.NettyRemotingServer;
-import org.apache.rocketmq.remoting.netty.NettyServerConfig;
-import org.apache.rocketmq.remoting.netty.RequestTask;
-import org.apache.rocketmq.remoting.netty.TlsSystemConfig;
+import org.apache.rocketmq.remoting.netty.*;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.srvutil.FileWatchService;
+
+import java.util.Collections;
+import java.util.concurrent.*;
 
 public class NamesrvController {
     private static final Logger LOGGER = LoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
@@ -105,9 +97,12 @@ public class NamesrvController {
         initiateNetworkComponents();
         // 初始化客户端请求线程池、内部请求线程池
         initiateThreadExecutors();
-        // 初始化内部请求处理器，客户端查询 topic 路由信息处理器
+        // 1.客户端查询 topic 信息处理器
+        // 2.集群内部组件请求处理器
         registerProcessor();
-        // 一些定时任务，扫描 broker，当前状态
+        // 1.Broker 心跳检查，销毁检查不通过的 broker
+        // 2.KVConfig 配置打印
+        // 3.集群内部组件请求和客户端查询 topic 线程池队列大小、队列首位请求间隔时间，做监控
         startScheduleService();
         // ssl 监听
         initiateSslContext();
@@ -122,11 +117,11 @@ public class NamesrvController {
     private void startScheduleService() {
         // 扫描并请求有问题的 broker
         this.scanExecutorService.scheduleAtFixedRate(NamesrvController.this.routeInfoManager::scanNotActiveBroker,
-            5000, this.namesrvConfig.getScanNotActiveBrokerInterval(), TimeUnit.MILLISECONDS);
-
+                5000, this.namesrvConfig.getScanNotActiveBrokerInterval(), TimeUnit.MILLISECONDS);
+        // 打印 KVConfig 配置
         this.scheduledExecutorService.scheduleAtFixedRate(NamesrvController.this.kvConfigManager::printAllPeriodically,
-            1, 10, TimeUnit.MINUTES);
-
+                1, 10, TimeUnit.MINUTES);
+        // 打印集群内部组件请求和客户端查询 topic 请求对应的线程池队列大小、队列首位请求间隔时间
         this.scheduledExecutorService.scheduleAtFixedRate(() -> {
             try {
                 NamesrvController.this.printWaterMark();
@@ -217,7 +212,8 @@ public class NamesrvController {
             ClientRequestProcessor clientRequestProcessor = new ClientRequestProcessor(this);
             // 客户端查询 topic 路由信息处理器
             this.remotingServer.registerProcessor(RequestCode.GET_ROUTEINFO_BY_TOPIC, clientRequestProcessor, this.clientRequestExecutor);
-            // 非客户端请求处理器
+            // 集群内部请求处理器
+            // eg：broker 注册、修改配置、查询配置等
             this.remotingServer.registerDefaultProcessor(new DefaultRequestProcessor(this), this.defaultExecutor);
         }
     }
@@ -236,7 +232,7 @@ public class NamesrvController {
         }
 
         this.remotingClient.updateNameServerAddressList(Collections.singletonList(NetworkUtil.getLocalAddress()
-            + ":" + nettyServerConfig.getListenPort()));
+                + ":" + nettyServerConfig.getListenPort()));
         this.remotingClient.start();
 
         if (this.fileWatchService != null) {

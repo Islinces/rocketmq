@@ -63,6 +63,7 @@ public class AckMessageProcessor implements NettyRequestProcessor {
         this.reviveTopic = PopAckConstants.buildClusterReviveTopic(
             this.brokerController.getBrokerConfig().getBrokerClusterName());
         this.popReviveServices = new PopReviveService[this.brokerController.getBrokerConfig().getReviveQueueNum()];
+        // reviveTopic 多个队列，每个队列单独一个线程消费，默认 8 个队列
         for (int i = 0; i < this.brokerController.getBrokerConfig().getReviveQueueNum(); i++) {
             this.popReviveServices[i] = new PopReviveService(brokerController, reviveTopic, i);
             this.popReviveServices[i].setShouldRunPopRevive(brokerController.getBrokerConfig().getBrokerId() == 0);
@@ -274,13 +275,16 @@ public class AckMessageProcessor implements NettyRequestProcessor {
         ackMsg.setAckOffset(ackOffset);
         ackMsg.setPopTime(popTime);
         ackMsg.setBrokerName(brokerName);
-
+        // 尝试 ack 消息
         if (this.brokerController.getPopMessageProcessor().getPopBufferMergeService().addAk(rqId, ackMsg)) {
+            // 减少未 ack 的消息数
             brokerController.getPopInflightMessageCounter().decrementInFlightMessageNum(topic, consumeGroup, popTime, qId, ackCount);
             return;
         }
 
         MessageExtBrokerInner msgInner = new MessageExtBrokerInner();
+        // 在内存中未找到 CK 时，将 ACK 消息存入发送到 reviveTopic 中，再延迟发送
+        // org.apache.rocketmq.broker.processor.PopReviveService.consumeReviveMessage 消费 reviveTopic 中的消息
         msgInner.setTopic(reviveTopic);
         msgInner.setBody(JSON.toJSONString(ackMsg).getBytes(StandardCharsets.UTF_8));
         msgInner.setQueueId(rqId);
@@ -294,6 +298,7 @@ public class AckMessageProcessor implements NettyRequestProcessor {
         msgInner.setBornTimestamp(System.currentTimeMillis());
         msgInner.setBornHost(this.brokerController.getStoreHost());
         msgInner.setStoreHost(this.brokerController.getStoreHost());
+        // 延迟发送
         msgInner.setDeliverTimeMs(popTime + invisibleTime);
         msgInner.getProperties().put(MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, PopMessageProcessor.genAckUniqueId(ackMsg));
         msgInner.setPropertiesString(MessageDecoder.messageProperties2String(msgInner.getProperties()));

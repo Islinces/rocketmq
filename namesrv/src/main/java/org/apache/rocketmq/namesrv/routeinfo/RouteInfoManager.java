@@ -747,7 +747,7 @@ public class RouteInfoManager {
         if (foundBrokerData && foundQueueData) {
 
             topicRouteData.setTopicQueueMappingByBroker(this.topicQueueMappingInfoTable.get(topic));
-
+            // 是否开启无主节点时，从从节点中选择一个作为主节点
             if (!namesrvConfig.isSupportActingMaster()) {
                 return topicRouteData;
             }
@@ -761,7 +761,7 @@ public class RouteInfoManager {
             }
 
             boolean needActingMaster = false;
-
+            // broker 集群中是否有无主节点的 broker
             for (final BrokerData brokerData : topicRouteData.getBrokerDatas()) {
                 if (brokerData.getBrokerAddrs().size() != 0
                     && !brokerData.getBrokerAddrs().containsKey(MixAll.MASTER_ID)) {
@@ -781,6 +781,7 @@ public class RouteInfoManager {
                 }
 
                 // No master
+                // 挑选一个作为主节点
                 for (final QueueData queueData : topicRouteData.getQueueDatas()) {
                     if (queueData.getBrokerName().equals(brokerData.getBrokerName())) {
                         if (!PermName.isWriteable(queueData.getPerm())) {
@@ -806,6 +807,7 @@ public class RouteInfoManager {
             for (Entry<BrokerAddrInfo, BrokerLiveInfo> next : this.brokerLiveTable.entrySet()) {
                 long last = next.getValue().getLastUpdateTimestamp();
                 long timeoutMillis = next.getValue().getHeartbeatTimeoutMillis();
+                // 销毁心跳检查不通过的 broker
                 if ((last + timeoutMillis) < System.currentTimeMillis()) {
                     RemotingHelper.closeChannel(next.getValue().getChannel());
                     log.warn("The broker channel expired, {} {}ms", next.getKey(), timeoutMillis);

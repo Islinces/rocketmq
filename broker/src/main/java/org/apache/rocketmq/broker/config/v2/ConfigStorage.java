@@ -92,6 +92,7 @@ public class ConfigStorage extends AbstractRocksDBStorage {
         if (started) {
             scheduledExecutorService.scheduleWithFixedDelay(() -> statRocksdb(LOGGER), 1, 10, TimeUnit.SECONDS);
             scheduledExecutorService.scheduleWithFixedDelay(this::statNettyMemory, 10, 10, TimeUnit.SECONDS);
+            // 10ms 刷下 wal
             this.flushSyncService.start();
         } else {
             LOGGER.error("Failed to start config storage");

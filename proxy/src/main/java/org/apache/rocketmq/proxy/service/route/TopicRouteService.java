@@ -81,6 +81,7 @@ public abstract class TopicRouteService extends AbstractStartAndShutdown {
             .refreshAfterWrite(config.getTopicRouteServiceCacheRefreshSeconds(), TimeUnit.SECONDS)
             .executor(cacheRefreshExecutor)
             .build(new CacheLoader<String, MessageQueueView>() {
+                // get 时当前 key 不存在或者过期时执行
                 @Override
                 public @Nullable MessageQueueView load(String topic) throws Exception {
                     try {
@@ -93,7 +94,10 @@ public abstract class TopicRouteService extends AbstractStartAndShutdown {
                         throw e;
                     }
                 }
-
+                // get 时当前 key 根据 refreshAfterWrite 配置判断已经失效
+                // 返回历史数据，提交异步请求执行 reload 更新 value
+                // 前提是配置了 refreshAfterWrite
+                // 异步执行
                 @Override
                 public @Nullable MessageQueueView reload(@NonNull String key,
                     @NonNull MessageQueueView oldValue) throws Exception {

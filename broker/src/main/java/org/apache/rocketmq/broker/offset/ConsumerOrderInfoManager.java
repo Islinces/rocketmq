@@ -490,6 +490,7 @@ public class ConsumerOrderInfoManager extends ConfigManager {
             if (offsetList == null || offsetList.isEmpty()) {
                 return false;
             }
+            // 检查当前消息是否是被当前 Pop 请求拉取的，是的话就不需要锁定，当前 Pop 请求可以拉取消息
             if (this.attemptId != null && this.attemptId.equals(attemptId)) {
                 return false;
             }

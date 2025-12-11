@@ -146,7 +146,7 @@ public class MessageStoreDispatcherImpl extends ServiceThread implements Message
                 flatFileStore.destroyFile(flatFile.getMessageQueue());
                 return CompletableFuture.completedFuture(false);
             }
-
+            // 一条消息元数据，20字节，size(4)、hash(8)、offset(8)
             long currentOffset = flatFile.getConsumeQueueMaxOffset();
             long commitOffset = flatFile.getConsumeQueueCommitOffset();
             long minOffsetInQueue = defaultStore.getMinOffsetInQueue(topic, queueId);
@@ -226,9 +226,11 @@ public class MessageStoreDispatcherImpl extends ServiceThread implements Message
                     topic, queueId, minOffsetInQueue, maxOffsetInQueue, currentOffset, maxOffsetInQueue - currentOffset);
                 return CompletableFuture.completedFuture(false);
             }
-
+            // 消息是否创建时间是否超过指定时间，默认 30s
             boolean timeout = MessageFormatUtil.getStoreTimeStamp(message.getByteBuffer()) +
                 storeConfig.getTieredStoreGroupCommitTimeout() < System.currentTimeMillis();
+            // 当前segment保存当前队列的消息数量是否超过指定数量，默认 4096
+            // commitlog 中当前队列最大偏移量和 segment 中当前偏移量之差
             boolean bufferFull = maxOffsetInQueue - currentOffset > storeConfig.getTieredStoreGroupCommitCount();
 
             if (!timeout && !bufferFull && !force) {
@@ -312,6 +314,7 @@ public class MessageStoreDispatcherImpl extends ServiceThread implements Message
                                 oldCommit.release();
                             }
                         }
+                        // 成功之后再次执行
                         if (success && repeat) {
                             storeExecutor.commonExecutor.submit(() -> dispatchWithSemaphore(flatFile));
                         }

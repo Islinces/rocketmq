@@ -237,7 +237,7 @@ public class TieredMessageStore extends AbstractPluginMessageStore {
 
                 if (result.getStatus() == GetMessageStatus.OFFSET_FOUND_NULL ||
                     result.getStatus() == GetMessageStatus.NO_MATCHED_LOGIC_QUEUE) {
-
+                    // 分层存储没有的话，从本地存储读取
                     if (next.checkInStoreByConsumeOffset(topic, queueId, offset)) {
                         TieredStoreMetricsManager.fallbackTotal.add(1, latencyAttributes);
                         log.debug("GetMessageAsync not found, then back to next store, result: {}, " +
@@ -287,6 +287,7 @@ public class TieredMessageStore extends AbstractPluginMessageStore {
 
                 return result;
             }).exceptionally(e -> {
+                // 兜底从本地存储读取
                 log.error("GetMessageAsync from tiered store failed", e);
                 return next.getMessage(group, topic, queueId, offset, maxMsgNums, messageFilter);
             });
